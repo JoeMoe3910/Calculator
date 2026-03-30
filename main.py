@@ -2,6 +2,13 @@ import flet as ft
 from decimal import Decimal, InvalidOperation
 import time
 import asyncio
+import urllib.request
+import json
+import threading
+
+CURRENT_VERSION = "v1.0.0"
+GITHUB_REPO = "JoeMoe3910/Calculator"
+
 def run_stress_test():
     """Скрытая функция тестирования: 20 сложных математических операций подряд."""
     print("--- Запуск стресс-теста ---")
@@ -45,7 +52,47 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
 
-    import threading
+    def show_update_dialog(latest_version, release_url):
+        def close_dialog(e):
+            update_dialog.open = False
+            page.update()
+
+        def go_to_release(e):
+            page.launch_url(release_url)
+            update_dialog.open = False
+            page.update()
+
+        update_dialog = ft.AlertDialog(
+            title=ft.Text("Доступно обновление!"),
+            content=ft.Text(f"Вышла новая версия калькулятора: {latest_version}\nУ вас установлена: {CURRENT_VERSION}\n\nХотите скачать обновление сейчас?", color=ft.Colors.WHITE70),
+            actions=[
+                ft.TextButton("Да, скачать", on_click=go_to_release),
+                ft.TextButton("Нет, позже", on_click=close_dialog),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            bgcolor="#1E1E2E"
+        )
+        page.overlay.append(update_dialog)
+        update_dialog.open = True
+        page.update()
+
+    def startup_update_check():
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            response = urllib.request.urlopen(req, timeout=3)
+            data = json.loads(response.read())
+            latest_version = data.get("tag_name")
+            release_url = data.get("html_url")
+            
+            if latest_version and latest_version != CURRENT_VERSION:
+                # Need to wait a bit until page is ready
+                time.sleep(1)
+                page.run_task(lambda: show_update_dialog(latest_version, release_url))
+        except Exception:
+            pass
+
+    threading.Thread(target=startup_update_check, daemon=True).start()
 
     # Состояние приложения
     calc_state = {
@@ -594,11 +641,54 @@ def main(page: ft.Page):
         custom_drawer.left = -400
         page.update()
 
+    def check_for_updates(e):
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text("Поиск обновлений...", color=ft.Colors.WHITE),
+            bgcolor=ft.Colors.BLUE_900,
+            duration=2000
+        )
+        page.snack_bar.open = True
+        page.update()
+        
+        def run_manual_update_check():
+            try:
+                url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+                response = urllib.request.urlopen(req, timeout=5)
+                data = json.loads(response.read())
+                latest_version = data.get("tag_name")
+                release_url = data.get("html_url")
+                
+                if latest_version and latest_version != CURRENT_VERSION:
+                    page.run_task(lambda: show_update_dialog(latest_version, release_url))
+                else:
+                    def show_latest_snack():
+                        page.snack_bar = ft.SnackBar(
+                            content=ft.Text(f"У вас самая актуальная версия ({CURRENT_VERSION})!", color=ft.Colors.WHITE),
+                            bgcolor=ft.Colors.GREEN_800,
+                            duration=3000
+                        )
+                        page.snack_bar.open = True
+                        page.update()
+                    page.run_task(show_latest_snack)
+            except Exception as ex:
+                def show_err_snack():
+                    page.snack_bar = ft.SnackBar(
+                        content=ft.Text(f"Ошибка проверки обновлений", color=ft.Colors.WHITE),
+                        bgcolor=ft.Colors.RED_800,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+                page.run_task(show_err_snack)
+
+        threading.Thread(target=run_manual_update_check, daemon=True).start()
+
     custom_drawer_content = ft.Container(
         content=ft.Column(
             controls=[
                 ft.Row([
-                    ft.Text("Конвертер", size=22, weight=ft.FontWeight.W_600, color="#8B5CF6"),
+                    ft.Text("Меню / Конвертер", size=20, weight=ft.FontWeight.W_600, color="#8B5CF6"),
                     ft.IconButton(icon=ft.Icons.CLOSE, on_click=close_custom_drawer, icon_color=ft.Colors.WHITE54)
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Divider(color=ft.Colors.WHITE24),
@@ -614,14 +704,18 @@ def main(page: ft.Page):
                 ft.Text("Длина (Из метров):", color=ft.Colors.WHITE54, size=14),
                 conv_length,
                 ft.Divider(color=ft.Colors.WHITE24),
-                ft.Text("Полезные ссылки:", color=ft.Colors.WHITE54, size=14),
+                ft.Text("Ссылки и Обновления:", color=ft.Colors.WHITE54, size=14),
                 ft.TextButton(
                     content=ft.Row([ft.Icon(ft.Icons.TELEGRAM, size=20, color=ft.Colors.BLUE_400), ft.Text("Наш Telegram", color=ft.Colors.BLUE_400)]),
-                    url="https://t.me/placeholder"
+                    url="https://t.me/JoeMoeCode"
                 ),
                 ft.TextButton(
                     content=ft.Row([ft.Icon(ft.Icons.BUG_REPORT, size=20, color=ft.Colors.RED_400), ft.Text("Сообщить о баге", color=ft.Colors.RED_400)]),
-                    url="https://github.com/placeholder/issues"
+                    url="https://github.com/JoeMoe3910/Calculator/issues"
+                ),
+                ft.TextButton(
+                    content=ft.Row([ft.Icon(ft.Icons.SYSTEM_UPDATE_ALT, size=20, color=ft.Colors.GREEN_400), ft.Text("Проверить обновления", color=ft.Colors.GREEN_400)]),
+                    on_click=check_for_updates
                 )
             ]
         ),
