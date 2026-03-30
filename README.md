@@ -1,3 +1,4 @@
+[![Telegram](https://img.shields.io/badge/Telegram-Channel-blue?style=for-the-badge&logo=telegram)](https://t.me/JoeMoeCode)
 # 🧮 Калькулятор нового поколения (Python / Flet)
 
 Современный калькулятор с красивым тёмным интерфейсом на базе фреймворка **Flet**. Создан не только для базовых расчетов, но и для поднятия настроения! У него внутри есть свои секреты. 🤫
