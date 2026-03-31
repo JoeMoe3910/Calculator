@@ -10,7 +10,7 @@ import sys
 import threading
 
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
-CURRENT_VERSION = "v2.4.2"
+CURRENT_VERSION = "v2.5.0"
 GITHUB_REPO = "JoeMoe3910/Calculator"
 
 # Цветовая палитра и стили
@@ -198,7 +198,7 @@ def main(page: ft.Page):
 
 
     admin_dialog = ft.AlertDialog(
-        title=ft.Text("МОИ СЕКРЕТИКИ 🕵️‍♂️ (v2.4.2)"),
+        title=ft.Text("МОИ СЕКРЕТИКИ 🕵️‍♂️ (v2.5.0)"),
         content=ft.Column([
             ft.Text("--- КЛАССИКА ---", size=12, weight=ft.FontWeight.BOLD, color="#8B5CF6"),
             ft.Text("• 1000 - 7 =", size=13),
@@ -492,12 +492,16 @@ def main(page: ft.Page):
             clear_active_effects()
             if "=" in op_btns:
                 op_btns["="].visible = True
+                op_btns["="].content.opacity = 1
+                op_btns["="].disabled = False
             page.update()
             return
 
         if data == "C":
             clear_active_effects()
-            if "=" in op_btns: op_btns["="].visible = True
+            if "=" in op_btns:
+                op_btns["="].content.opacity = 1
+                op_btns["="].disabled = False
             
             calc_state["c_clicks"] += 1
             if calc_state["c_clicks"] == 4:
@@ -574,9 +578,11 @@ def main(page: ft.Page):
                  sarcasm_text.value = "Ой... Кнопка улетела в черную дыру. Нажмите AC."
                  current_input.value = "ERR: GONE"
                  if "=" in op_btns:
-                     op_btns["="].visible = False
+                     op_btns["="].content.opacity = 0
+                     op_btns["="].disabled = True
                  page.update()
                  return
+
 
             if calc_state["operator"] == "" or calc_state["operand2"] == "":
                 if calc_state["eq_clicks"] == 2:
@@ -808,22 +814,31 @@ def main(page: ft.Page):
     # --- Режим "Дзен" ---
     zen_active = False
     
+    history_container = None
+    drawer_btn = None
+    zen_btn = None
+    science_btn = None
+
     def toggle_zen(e):
+        """Переключает режим 'Дзен' (скрывает лишние элементы)"""
         nonlocal zen_active
         zen_active = not zen_active
         if zen_active:
-             history_container.opacity = 0
-             drawer_btn.opacity = 0
-             drawer_btn.disabled = True
+             if history_container: history_container.opacity = 0
+             if drawer_btn: 
+                 drawer_btn.opacity = 0
+                 drawer_btn.disabled = True
              zen_btn.icon = ft.Icons.SELF_IMPROVEMENT
-             zen_btn.icon_color = "#8B5CF6"
+             zen_btn.icon_color = COLORS["accent_purple"]
         else:
-             history_container.opacity = 1
-             drawer_btn.opacity = 1
-             drawer_btn.disabled = False
+             if history_container: history_container.opacity = 1
+             if drawer_btn:
+                 drawer_btn.opacity = 1
+                 drawer_btn.disabled = False
              zen_btn.icon = ft.Icons.SELF_IMPROVEMENT_OUTLINED
              zen_btn.icon_color = ft.Colors.WHITE54
         page.update()
+
 
     def toggle_engineering(e, force_state=None):
         if force_state is not None:
@@ -892,19 +907,22 @@ def main(page: ft.Page):
 
     def create_display_area():
         """Создает область экрана калькулятора"""
+        nonlocal history_container
+        history_container = ft.Container(
+            content=ft.Column(
+                controls=history_texts, 
+                spacing=2, 
+                alignment=ft.MainAxisAlignment.END,
+                horizontal_alignment=ft.CrossAxisAlignment.END,
+                scroll=ft.ScrollMode.HIDDEN
+            ),
+            height=90,
+        )
+        
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Container(
-                        content=ft.Column(
-                            controls=history_texts, 
-                            spacing=2, 
-                            alignment=ft.MainAxisAlignment.END,
-                            horizontal_alignment=ft.CrossAxisAlignment.END,
-                            scroll=ft.ScrollMode.HIDDEN
-                        ),
-                        height=90,
-                    ),
+                    history_container,
                     ft.Container(
                         content=sarcasm_text,
                         height=45,
@@ -920,6 +938,7 @@ def main(page: ft.Page):
             height=245,
             alignment=ft.Alignment.BOTTOM_RIGHT
         )
+
 
     def create_converter_drawer():
         """Создает боковую панель с конвертером"""
@@ -979,8 +998,10 @@ def main(page: ft.Page):
                     ft.Text("Длина (Фут/СМ):", color=COLORS["text_dim"], size=13),
                     conv_length,
                     ft.Divider(color=ft.Colors.WHITE24),
-                    ft.TextButton("Telegram", icon=ft.Icons.SEND, url="https://t.me/JoeMoeCode"),
-                    ft.TextButton("Обновить", icon=ft.Icons.REFRESH, on_click=check_for_updates),
+                    ft.TextButton("Наш Telegram", icon=ft.Icons.SEND, url="https://t.me/JoeMoeCode", icon_color=COLORS["accent_purple"]),
+                    ft.TextButton("Сообщить о баге", icon=ft.Icons.BUG_REPORT, url=f"https://github.com/{GITHUB_REPO}/issues", icon_color=COLORS["accent_red"]),
+                    ft.TextButton("Проверить обновления", icon=ft.Icons.REFRESH, on_click=check_for_updates, icon_color=COLORS["accent_blue"]),
+                    ft.Container(height=10),
                     ft.Text("Версия: " + CURRENT_VERSION, color=COLORS["text_dim"], size=12)
                 ]
             ),
@@ -1058,7 +1079,9 @@ def main(page: ft.Page):
                     create_btn("0", width=165), 
                     create_btn("."), 
                     create_btn("=", "=", color=COLORS["text_white"], bgcolor=COLORS["accent_blue"], is_neon=True)
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                ], spacing=17, alignment=ft.MainAxisAlignment.START)
+
+
 
             ],
             spacing=15
