@@ -10,7 +10,7 @@ import sys
 import threading
 
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
-CURRENT_VERSION = "v2.5.0"
+CURRENT_VERSION = "v3.0.0"
 GITHUB_REPO = "JoeMoe3910/Calculator"
 
 # Цветовая палитра и стили
@@ -38,7 +38,11 @@ INITIAL_STATE = {
     "key_buffer": "",
     "is_animating": False,
     "is_engineering": False,
-    "ans": "0"
+    "ans": "0",
+    "display_text": "SYSTEM READY_ [v3.0.0]",
+    "raw_expression": "",
+    "ops_count": 0,
+    "user_level": 1
 }
 
 def resource_path(relative_path):
@@ -95,64 +99,51 @@ def main(page: ft.Page):
     page.title = "Калькулятор нового поколения"
     page.bgcolor = COLORS["bg_main"]
     page.window.width = 420
-    page.window.height = 800
+    page.window.height = 850 # Увеличено, чтобы не обрезалось
     page.window.min_width = 400
     page.window.min_height = 800
     page.window.resizable = True
-    page.window.center()
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.update()
 
-
-    def show_update_dialog(latest_version, release_url):
+    def show_status_dialog(title, content, release_url=None):
         def close_dialog(e):
-            update_dialog.open = False
+            status_dialog.open = False
             page.update()
 
         def go_to_release(e):
-            page.launch_url(release_url)
-            update_dialog.open = False
+            if release_url:
+                page.launch_url(release_url)
+            status_dialog.open = False
             page.update()
 
-        update_dialog = ft.AlertDialog(
-            title=ft.Text("Доступно обновление!"),
-            content=ft.Text(f"Вышла новая версия калькулятора: {latest_version}\nУ вас установлена: {CURRENT_VERSION}\n\nХотите скачать обновление сейчас?", color=ft.Colors.WHITE70),
-            actions=[
+        actions = []
+        if release_url:
+            actions = [
                 ft.TextButton("Да, скачать", on_click=go_to_release),
                 ft.TextButton("Нет, позже", on_click=close_dialog),
-            ],
+            ]
+        else:
+            actions = [ft.TextButton("Понятно", on_click=close_dialog)]
+
+        status_dialog = ft.AlertDialog(
+            title=ft.Text(title),
+            content=ft.Text(content, color=ft.Colors.WHITE70),
+            actions=actions,
             actions_alignment=ft.MainAxisAlignment.END,
             bgcolor="#1E1E2E"
         )
-        page.overlay.append(update_dialog)
-        update_dialog.open = True
+        page.overlay.append(status_dialog)
+        status_dialog.open = True
         page.update()
-
-    def startup_update_check():
-        try:
-            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-            response = urllib.request.urlopen(req, timeout=3)
-            data = json.loads(response.read())
-            latest_version = data.get("tag_name")
-            release_url = data.get("html_url")
-            
-            if latest_version and latest_version != CURRENT_VERSION:
-                # Need to wait a bit until page is ready
-                time.sleep(1)
-                page.run_task(lambda: show_update_dialog(latest_version, release_url))
-        except Exception:
-            pass
-
-    threading.Thread(target=startup_update_check, daemon=True).start()
 
     def check_for_updates(e=None):
         """Ручная проверка обновлений через GitHub API"""
         page.snack_bar = ft.SnackBar(
             content=ft.Text("Поиск обновлений...", color=COLORS["text_white"]),
             bgcolor=ft.Colors.BLUE_900,
-            duration=2000
+            duration=1500
         )
         page.snack_bar.open = True
         page.update()
@@ -166,28 +157,24 @@ def main(page: ft.Page):
                 latest_version = data.get("tag_name")
                 release_url = data.get("html_url")
                 
-                if latest_version and latest_version != CURRENT_VERSION:
-                    page.run_task(lambda: show_update_dialog(latest_version, release_url))
-                else:
-                    def show_latest_snack():
-                        page.snack_bar = ft.SnackBar(
-                            content=ft.Text(f"У вас актуальная версия ({CURRENT_VERSION})", color=COLORS["text_white"]),
-                            bgcolor=ft.Colors.GREEN_800,
-                        )
-                        page.snack_bar.open = True
-                        page.update()
-                    page.run_task(show_latest_snack)
+                if latest_version:
+                    if latest_version == CURRENT_VERSION:
+                        title = "Обновлений нет"
+                        msg = f"У вас установлена актуальная версия: {CURRENT_VERSION}"
+                        show_status_dialog(title, msg)
+                    elif latest_version < CURRENT_VERSION:
+                        title = "Ого!"
+                        msg = "Вы из будущего! Ваша версия выше, чем официальный релиз на GitHub."
+                        show_status_dialog(title, msg)
+                    else:
+                        title = "Доступно обновление!"
+                        msg = f"Вышла новая версия калькулятора: {latest_version}\nУ вас установлена: {CURRENT_VERSION}\n\nХотите скачать обновление сейчас?"
+                        show_status_dialog(title, msg, release_url)
 
             except Exception:
-                def show_err_snack():
-                    page.snack_bar = ft.SnackBar(
-                        content=ft.Text("Ошибка проверки обновлений", color=COLORS["text_white"]),
-                        bgcolor=ft.Colors.RED_800,
-                        duration=3000
-                    )
-                    page.snack_bar.open = True
-                    page.update()
-                page.run_task(show_err_snack)
+                # Проверка на отсутствие интернета
+                error_msg = "Нет подключения к интернету или сервер GitHub недоступен."
+                show_status_dialog("Ошибка подключения", error_msg)
 
         threading.Thread(target=run_manual_update_check, daemon=True).start()
 
@@ -235,7 +222,7 @@ def main(page: ft.Page):
 
     # --- ОБОРУДОВАНИЕ И СОСТОЯНИЕ ---
     op_btns = {}
-    zen_active = False
+    zen_active = True
     
     # UI Элементы
 
@@ -314,10 +301,11 @@ def main(page: ft.Page):
 
     async def run_c4_explosion():
         """Пасхалка: взрыв при 4-х нажатиях на C"""
+        if zen_active: return # Дзен блокирует игры
         calc_state["is_animating"] = True
         for i in range(10):
             page.bgcolor = COLORS["accent_red"] if i % 2 == 0 else ft.Colors.BLACK
-            current_input.value = "💥 EXPLOSION 💥" if i < 3 else ("🔥" * (i - 2))
+            current_input.value = "💥 EXPLOSION 💥" if i < 3 else ("🔥" * (i - 3)) # Убран один огонек
             current_input.size = 24 if i < 3 else 48
             page.update()
             await asyncio.sleep(0.1)
@@ -344,7 +332,7 @@ def main(page: ft.Page):
             current_input.value = f"{v} - 7 ="
             add_history(f"{old_v} - 7 = {v}")
             page.update()
-            await asyncio.sleep(0.04)
+            await asyncio.sleep(0.02) # Ускорено для v3.0.0
         
         if calc_state.get("abort_animation", False):
             current_input.color = COLORS["text_white"]
@@ -375,51 +363,71 @@ def main(page: ft.Page):
         page.update()
 
     async def run_matrix_mode():
-        """Эффект: Режим Матрицы при 1337"""
+        """Эффект: Режим Матрицы при 1337 (v3.0.0 Edition)"""
         clear_active_effects()
         calc_state["is_animating"] = True
-        for i in range(10):
+        calc_state["display_text"] = "!!! OVERRIDE_INITIATED !!!"
+        update_monitor()
+        
+        # Начальный глитч
+        for i in range(25): # Удлинено для v3.0.0
             page.bgcolor = "#001A00" if i % 2 == 0 else "#000000"
-            current_input.value = "BREACH DETECTED" if i % 2 == 0 else "N E O"
+            current_input.value = "".join([chr(bytearray(os.urandom(1))[0] % 26 + 65) for _ in range(8)])
+            current_input.color = "#00FF41"
+            monitor_content.value = f"ANALYZING_CORE_{i}...\nDATA_BREACH: {i*4}%"
             page.update()
-            await asyncio.sleep(0.08)
+            await asyncio.sleep(0.04)
         
         page.bgcolor = "#050505"
-        page.title = "MATRIX_MODE 💀"
+        page.title = "ACCESS_GRANTED_CORE"
+        current_input.value = "NEO"
+        current_input.size = 72
         current_input.color = "#00FF41"
-        sarcasm_text.value = "С возвращением, Нео. 💀"
+        
+        sarcasm_text.value = "Проснись, Нео... Ты погряз в вычислениях. 🐇"
+        sarcasm_text.color = "#00FF41"
+        
         calc_state["is_animating"] = False
+        calc_state["display_text"] = "LOCAL_RECONFIGURATION..."
+        update_monitor()
         page.update()
 
     async def run_glitch_division():
-        """Эффект: Ошибка сингулярности (деление на ноль)"""
+        """Ошибка сингулярности (v3.0.0 Edition)"""
         clear_active_effects()
         calc_state["is_animating"] = True
-        for i in range(12):
+        calc_state["display_text"] = "SINGULARITY_DETECTED!"
+        update_monitor()
+        
+        for i in range(20):
             page.bgcolor = ft.Colors.RED_900 if i % 2 == 0 else ft.Colors.INDIGO_900
-            current_input.value = "CRITICAL_FAILURE" if i % 3 == 0 else "N U L L _ V O I D"
+            current_input.value = "ERR_VOID" if i % 3 == 0 else "NULL"
             current_input.size = 20 + (i * 2)
             page.update()
-            await asyncio.sleep(0.06)
+            await asyncio.sleep(0.04)
         
         # Активация черной дыры
         page.bgcolor = "#000000"
         black_hole_bg.visible = True
         black_hole_bg.opacity = 1
-        current_input.value = "v o i d"
-        current_input.size = 56
-        current_input.opacity = 0.5
-        sarcasm_text.value = "Сингулярность достигнута. Вернусь через 5 минут. 🌑"
-        sarcasm_text.color = ft.Colors.GREY_400
-        calc_state.update({"operand1": "0", "operand2": "", "operator": "", "new_operand": True, "is_animating": False})
+        current_input.value = "V O I D"
+        current_input.size = 84 # Огромный текст
+        current_input.opacity = 1.0 # Полная видимость
+        current_input.color = ft.Colors.RED_ACCENT_400 # Кислотно-красный
+        
+        sarcasm_text.value = "СИНГУЛЯРНОСТЬ ДОСТИГНУТА"
+        sarcasm_text.color = ft.Colors.WHITE
+        sarcasm_text.weight = ft.FontWeight.BOLD
+        
+        calc_state.update({"operand1": "0", "operand2": "", "operator": "", "new_operand": True, "is_animating": False, "display_text": "THE_END_OF_ALL"})
+        update_monitor()
         page.update()
         
-        await asyncio.sleep(300)
-        
+        await asyncio.sleep(300) # Поглощение вселенной на 5 минут
         if black_hole_bg.visible:
             clear_active_effects()
-            sarcasm_text.value = "Вселенная восстановилась. Только больше так не делай."
-            sarcasm_text.color = COLORS["accent_purple"]
+            calc_state["display_text"] = "SYSTEM_RESTORED"
+            update_monitor()
             page.update()
 
     def calculate_scientific(data, target_operand):
@@ -460,30 +468,56 @@ def main(page: ft.Page):
 
     def process_input(data):
         if calc_state.get("is_animating", False):
-            if data in ["AC", "C"]:
+            if data in ["AC", "C", "BACKSPACE"]:
                 calc_state["abort_animation"] = True
             return
         if not data:
             return
 
-        if data != "=":
-            calc_state["eq_clicks"] = 0
-            
-        if data != "C":
+        # Игнорировать все игровые фишки, если включен Дзен
+        is_fun_data = data == "C" or data == "=" or data.startswith("LETTER_")
+        
+        # Логика взрыва "cccc"
+        if data == "C":
+            if not zen_active:
+                calc_state["c_clicks"] += 1
+                if calc_state["c_clicks"] == 4:
+                    page.run_task(run_c4_explosion)
+                    calc_state["c_clicks"] = 0
+                    return
+            else:
+                calc_state["c_clicks"] = 0
+        elif data != "BACKSPACE":
             calc_state["c_clicks"] = 0
 
-        # Сброс насмешки только при начале нового ввода чисел или очистке
-        if data in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "AC", "C"] or data.startswith("LETTER_"):
+        if data == "=":
+            if not zen_active:
+                calc_state["eq_clicks"] += 1
+                if calc_state["eq_clicks"] == 16:
+                    page.run_task(run_glitch_division)
+                    calc_state["eq_clicks"] = 0
+                    return
+            else:
+                 calc_state["eq_clicks"] = 0
+            
+            if calc_state["operator"] == "" or calc_state["operand2"] == "":
+                return
+        else:
+            calc_state["eq_clicks"] = 0
+
+        # Сброс насмешки
+        if data in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "AC", "C", "BACKSPACE"] or data.startswith("LETTER_"):
             sarcasm_text.value = ""
             
         if data.startswith("LETTER_"):
             if not zen_active:
-                sarcasm_text.value = f"Буква «{data.split('_')[1]}»? Сэр, мы тут математикой занимаемся, а не сочинения пишем!"
+                char = data.split('_')[1]
+                sarcasm_text.value = f"Буква «{char}»? Мы тут математикой занимаемся!"
             page.update()
             return
         
         if data == "AC":
-            calc_state.update({"operand1": "0", "operand2": "", "operator": "", "new_operand": False})
+            calc_state.update({"operand1": "0", "operand2": "", "operator": "", "new_operand": False, "raw_expression": ""})
             calc_state["history"].clear()
             current_input.value = "0"
             format_number_scale("0")
@@ -497,20 +531,23 @@ def main(page: ft.Page):
             page.update()
             return
 
+        if data == "BACKSPACE":
+            target_operand = "operand1" if calc_state["operator"] == "" else "operand2"
+            val = calc_state[target_operand]
+            if len(val) > 1:
+                calc_state[target_operand] = val[:-1]
+            else:
+                calc_state[target_operand] = "0"
+            current_input.value = format_number_scale(calc_state[target_operand])
+            page.update()
+            return
+
         if data == "C":
             clear_active_effects()
             if "=" in op_btns:
                 op_btns["="].content.opacity = 1
                 op_btns["="].disabled = False
             
-            calc_state["c_clicks"] += 1
-            if calc_state["c_clicks"] == 4:
-                page.run_task(run_c4_explosion)
-                return
-            elif calc_state["c_clicks"] >= 5:
-                sarcasm_text.value = "Система и так в руинах, чего ты еще хочешь?"
-
-                
             if calc_state["operator"] == "":
                 calc_state["operand1"] = "0"
             else:
@@ -527,6 +564,14 @@ def main(page: ft.Page):
             page.update()
             return
 
+        if data in ["pi", "e"]:
+            target_operand = "operand1" if calc_state["operator"] == "" else "operand2"
+            val = str(math.pi) if data == "pi" else str(math.e)
+            calc_state[target_operand] = val
+            current_input.value = format_number_scale(val)
+            page.update()
+            return
+
         if data in ["(", ")"]:
             target_operand = "operand1" if calc_state["operator"] == "" else "operand2"
             if calc_state[target_operand] == "0":
@@ -536,6 +581,7 @@ def main(page: ft.Page):
             current_input.value = format_number_scale(calc_state[target_operand])
             page.update()
             return
+
         if data == "%":
             target_operand = "operand1" if calc_state["operator"] == "" else "operand2"
             if calc_state[target_operand]:
@@ -546,183 +592,166 @@ def main(page: ft.Page):
                     calc_state[target_operand] = form_val
                     current_input.value = format_number_scale(calc_state[target_operand])
                     page.update()
-                except Exception:
-                    pass
+                except Exception: pass
             return
 
         if data in ["/", "*", "-", "+", "^"]:
+            # Если уже есть операнд1 и операнд2, вычисляем промежуточный результат для поддержки цепочек
+            if calc_state["operand1"] != "0" and calc_state["operator"] != "" and calc_state["operand2"] != "":
+                process_input("=")
+                calc_state["new_operand"] = True
+            
             calc_state["operator"] = data
             calc_state["new_operand"] = True
             update_operator_styles(data)
             return
 
-        # --- Научные функции (Unary) ---
-        if data in ["sin", "cos", "tan", "sqrt", "log", "ln", "abs", "fact", "sq2"]:
+        if data in ["sin", "cos", "tan", "sqrt", "log", "ln", "abs", "fact", "sq2", "sq3"]:
             target_operand = "operand1" if calc_state["operator"] == "" else "operand2"
+            if data == "sq3":
+                 try:
+                     val = float(calc_state[target_operand])
+                     res = val ** 3
+                     res_str = f"{res:g}"
+                     calc_state[target_operand] = res_str
+                     current_input.value = format_number_scale(res_str)
+                     page.update()
+                 except: pass
+                 return
             calculate_scientific(data, target_operand)
             return
 
-
-        if data in ["pi", "e"]:
-            target_operand = "operand1" if calc_state["operator"] == "" else "operand2"
-            val = str(math.pi) if data == "pi" else str(math.e)
-            calc_state[target_operand] = val
-            current_input.value = format_number_scale(val)
-            page.update()
-            return
-
         if data == "=":
-            # Механика поломки кнопки
             calc_state["eq_clicks"] += 1
             if calc_state["eq_clicks"] >= 16:
-                 sarcasm_text.value = "Ой... Кнопка улетела в черную дыру. Нажмите AC."
-                 current_input.value = "ERR: GONE"
+                 sarcasm_text.value = "Ошибка: Кнопка аннигилирована."
+                 current_input.value = "VOID"
                  if "=" in op_btns:
                      op_btns["="].content.opacity = 0
                      op_btns["="].disabled = True
                  page.update()
                  return
 
-
             if calc_state["operator"] == "" or calc_state["operand2"] == "":
-                if calc_state["eq_clicks"] == 2:
-                    current_input.value = format_number_scale(calc_state["operand1"])
-                elif calc_state["eq_clicks"] == 4:
-                    sarcasm_text.value = f"Знаешь, {calc_state['operand1']} = {calc_state['operand1']}. Удовольствие получено?"
-                    page.update()
-                elif calc_state["eq_clicks"] == 8:
-                    sarcasm_text.value = "Сломать кнопку «равно» — это твой новый челлендж?"
-                    page.update()
                 return
 
-            if calc_state["operator"] and calc_state["operand2"] != "":
-                try:
-                    val1 = Decimal(calc_state["operand1"])
-                    val2 = Decimal(calc_state["operand2"])
-                    res = Decimal(0)
-                    
-                    if calc_state["operator"] == "+": res = val1 + val2
-                    elif calc_state["operator"] == "-": res = val1 - val2
-                    elif calc_state["operator"] == "*": res = val1 * val2
-                    elif calc_state["operator"] == "/":
-                        if val2 == Decimal(0):
-                            raise ZeroDivisionError
-                        res = val1 / val2
-                    elif calc_state["operator"] == "^":
-                        res = Decimal(str(pow(float(val1), float(val2))))
-                    elif calc_state["operator"] in ["mod", "%"]:
-                        res = val1 % val2
-                    
-                    calc_state["ans"] = str(res)
-                    if zen_active:
-                        # В режиме Дзен считаем всё тихо
-                        pass
-                    elif val1 == Decimal("1000") and val2 == Decimal("7") and calc_state["operator"] == "-":
+            try:
+                op1 = calc_state["operand1"]
+                op2 = calc_state["operand2"]
+                operator = calc_state["operator"]
+                val1 = Decimal(op1)
+                val2 = Decimal(op2)
+                res = Decimal(0)
+                
+                if operator == "+": res = val1 + val2
+                elif operator == "-": res = val1 - val2
+                elif operator == "*": res = val1 * val2
+                elif operator == "/":
+                    if val2 == Decimal(0): raise ZeroDivisionError
+                    res = val1 / val2
+                elif operator == "^":
+                    res = Decimal(str(pow(float(val1), float(val2))))
+                
+                # Спец-эффекты и пасхалки
+                clear_active_effects() # Сбрасываем старые перед новой
+                
+                if not zen_active:
+                    if val1 == Decimal("1000") and val2 == Decimal("7") and operator == "-":
                         page.run_task(run_ghoul_animation)
                         return
-                    elif val1 == Decimal("1") and val2 == Decimal("1") and calc_state["operator"] == "+":
-                        sarcasm_text.value = "В Океании 1+1 всегда равно 3. Старший Брат следит за тобой. 👁️"
                     elif res == Decimal("777"):
                         sarcasm_text.value = "JACKPOT! 🎰 Иди покупай лотерейный билет."
                         page.run_task(run_jackpot_effect)
-
-                    elif res == Decimal("0.07"):
-                        sarcasm_text.value = "Меня зовут Калькулятор. Просто Калькулятор. 🔫🍸"
-                    elif res == Decimal("88"):
-                        sarcasm_text.value = "88 миль в час? Пора в будущее! ⚡"
-                    elif res == Decimal("300"):
-                        sarcasm_text.value = "Тракторист? Понимаю, уважаю. 🚜"
-                    elif res == Decimal("911"):
-                        sarcasm_text.value = "Вызываю службу спасения ваших математических навыков... 🚑"
-                    elif res == Decimal("3.14") or res == Decimal("3.14159"):
-                        sarcasm_text.value = "С днем Пи! Где мой черничный пирог? 🥧"
+                    elif res == Decimal("1337"):
+                        page.run_task(run_matrix_mode)
+                    
+                    # Harry Potter Easter Eggs
+                    elif res == Decimal("9.75"):
+                        sarcasm_text.value = "Платформа 9¾? Пора в Хогвартс! 🚂✨"
+                    elif res == Decimal("394"):
+                        sarcasm_text.value = "Откройте страницу номер 394... 🦇"
+                    elif res == Decimal("7"):
+                        sarcasm_text.value = "Семь — самое могущественное магическое число. ⚡"
+                    
+                    # Возврат классических сарказмов v2.5.0
+                    if val1 == Decimal("1") and val2 == Decimal("1") and operator == "+":
+                        sarcasm_text.value = "В Океании 1+1 всегда равно 3. Старший Брат следит за тобой. 👁️"
+                        res = Decimal("3") # Принудительно меняем результат для этой пасхалки
                     elif res == Decimal("42"):
-                        sarcasm_text.value = "42 — Главный ответ на вопрос Жизни, Вселенной и всего такого."
+                        sarcasm_text.value = "42 — Главный ответ на вопрос Жизни и всего такого."
                     elif res == Decimal("80085"):
                         sarcasm_text.value = "80085? Классика жанра. ( ͡° ͜ʖ ͡°)"
-                    elif res == Decimal("5051"):
-                        sarcasm_text.value = "5051? Очень по-взрослому."
-                    elif res == Decimal("1337"):
-                         sarcasm_text.value = "1337... Мы тут все элитные хакеры, да?"
-                         page.run_task(run_matrix_mode)
-
+                    elif res == Decimal("300"):
+                        sarcasm_text.value = "Тракторист? Понимаю, уважаю. 🚜"
+                    elif res == Decimal("69"):
+                        sarcasm_text.value = "69? Nice. ( ͡° ͜ʖ ͡°)"
+                    elif res == Decimal("420"):
+                        sarcasm_text.value = "420? Время расслабиться... 🌿"
+                    elif res == Decimal("1984"):
+                        sarcasm_text.value = "Большой Брат следит за твоими вычислениями."
                     elif res == Decimal("228") or val1 == Decimal("228"):
-                        sarcasm_text.value = "228? Статья за хранение... калькуляторов."
+                        sarcasm_text.value = "228? Статья за хранение... калькуляторов. 👮"
                     elif res == Decimal("322") or val1 == Decimal("322"):
-                        sarcasm_text.value = "322... Кто-то опять решил слить катку (GG)."
+                        sarcasm_text.value = "322... Кто-то опять решил слить катку (GG). 🎮"
                     elif res == Decimal("146") or val1 == Decimal("146"):
-                        sarcasm_text.value = "146%? Эту математику одобряет Центризбирком."
+                        sarcasm_text.value = "146%? Эту математику одобряет Центризбирком. 🗳️"
                     elif res == Decimal("2007") or val1 == Decimal("2007"):
                         sarcasm_text.value = "Верни мне мой 2007-й... Сентябрь горит, убийца плачет 🥀"
-                    elif res == Decimal("1984") or val1 == Decimal("1984"):
-                        sarcasm_text.value = "Большой Брат следит за твоими вычислениями."
-                    elif res == Decimal("69") or val1 == Decimal("69"):
-                        sarcasm_text.value = "69? Nice. ( ͡° ͜ʖ ͡°)"
-                    elif res == Decimal("420") or val1 == Decimal("420"):
-                        sarcasm_text.value = "420? Время расслабиться... 🌿"
-                    elif res == Decimal("256"):
-                        sarcasm_text.value = "256! С Днем программиста!"
+                    elif res == Decimal("13"):
+                        sarcasm_text.value = "13... Плохое число... Не рекомендую. 💀"
+                    elif res == Decimal("0.07"):
+                        sarcasm_text.value = "Меня зовут Калькулятор. Просто Калькулятор. 🔫🍸"
+                    elif res == Decimal("5051"):
+                        sarcasm_text.value = "5051? Очень по-взрослому. ( ͡° ͜ʖ ͡°)"
+                    elif res == Decimal("314"):
+                        sarcasm_text.value = "Похоже на Пи. Пирога захотелось. 🥧"
+                    elif res == Decimal("88"):
+                        sarcasm_text.value = "88 миль в час? Пора в будущее! ⚡"
+                    elif res == Decimal("911"):
+                        sarcasm_text.value = "Вызываю службу спасения ваших навыков... 🚑"
                     elif res == Decimal("404"):
                         sarcasm_text.value = "Ничего не найдено, зато мы нашли друг друга! ✨"
                     elif res >= Decimal("9000") and res < Decimal("9500"):
                         sarcasm_text.value = "IT'S OVER 9000!!!! 🔥"
-                    elif res == Decimal("2048"):
-                        sarcasm_text.value = "2048? Собираешься играть в плиточки на калькуляторе?"
-                    elif res < Decimal("0"):
-                        sarcasm_text.value = "Ушли в минус. Жизненно, как мой банковский счет."
-                    elif res == Decimal("314"):
-                        sarcasm_text.value = "Похоже на Пи. Пирога захотелось."
-                    elif res > Decimal("1000000000000"):
-                        sarcasm_text.value = "Ого, да ты прям магнат цифр."
-                    elif res == Decimal("13"):
-                        sarcasm_text.value = "13... Плохое число... Не рекомендую."
 
-                    # Форматирование результата (избавляемся от научной нотации типа 9E+3)
-                    res_str = f"{res:f}"
-                    if '.' in res_str:
-                         res_str = res_str.rstrip('0').rstrip('.')
-                    
-                    op_sign = {"/": "÷", "*": "×", "-": "-", "+": "+", "^": "^"}[calc_state['operator']]
-                    hist_entry = f"{calc_state['operand1']} {op_sign} {calc_state['operand2']} = {res_str}"
-                    add_history(hist_entry)
-                    
-                    calc_state.update({"operand1": res_str, "operand2": "", "operator": "", "new_operand": True})
-                    current_input.value = format_number_scale(res_str)
-                    update_operator_styles("")
-                    
-                except ZeroDivisionError:
+
+                res_str = f"{res:f}"
+                if '.' in res_str: res_str = res_str.rstrip('0').rstrip('.')
+                
+                # История
+                op_sign = {"/": "÷", "*": "×", "-": "-", "+": "+", "^": "^"}[operator]
+                add_history(f"{op1} {op_sign} {op2} = {res_str}")
+                
+                calc_state["ans"] = res_str
+                calc_state["ops_count"] += 1
+                if calc_state["ops_count"] % 10 == 0:
+                    calc_state["user_level"] += 1
+                    if not zen_active:
+                        calc_state["display_text"] = f"LEVEL_UP: {calc_state['user_level']}"
+                
+                calc_state.update({"operand1": res_str, "operand2": "", "operator": "", "new_operand": True})
+                current_input.value = format_number_scale(res_str)
+                update_operator_styles("")
+                
+            except ZeroDivisionError:
+                if zen_active:
+                    current_input.value = "∞"
+                    current_input.color = ft.Colors.AMBER
+                else:
                     page.run_task(run_glitch_division)
-                    return
-                except Exception:
-                    # Попытка вычислить как выражение (для скобок)
-                    try:
-                        expr = f"{calc_state['operand1']}{calc_state['operator']}{calc_state['operand2']}"
-                        expr = expr.replace("×", "*").replace("÷", "/")
-                        import math
-                        safe_dict = {"math": math, "sin": math.sin, "cos": math.cos, "tan": math.tan, "sqrt": math.sqrt, "log": math.log10, "ln": math.log, "pi": math.pi, "e": math.e}
-                        res_val = eval(expr, {"__builtins__": None}, safe_dict)
-                        res_str = f"{res_val:g}"
-                        calc_state["ans"] = res_str
-                        calc_state.update({"operand1": res_str, "operand2": "", "operator": "", "new_operand": True})
-                        current_input.value = format_number_scale(res_str)
-                    except:
-                        current_input.value = "Ошибка вычисления"
-                        current_input.size = 24
-                        calc_state.update({"operand1": "0", "operand2": "", "operator": "", "new_operand": True})
+                return
+            except Exception:
+                current_input.value = "ERR"
+            
             page.update()
             return
 
-        # Обработка ввода цифр и запятой
-        if calc_state["operator"] == "":
-            target_operand = "operand1"
-        else:
-            target_operand = "operand2"
-
+        # Стандартный ввод чисел
+        target_operand = "operand1" if calc_state["operator"] == "" else "operand2"
         if calc_state["new_operand"]:
             calc_state[target_operand] = data if data != "." else "0."
             calc_state["new_operand"] = False
-            if target_operand == "operand2":
-                 update_operator_styles("")
+            if target_operand == "operand2": update_operator_styles("")
         else:
             if data == ".":
                 if "." not in calc_state[target_operand]:
@@ -744,6 +773,14 @@ def main(page: ft.Page):
             return  # Игнорировать клавиатуру, когда боковое меню открыто
         key = e.key
         
+        # Маппинг нумпада
+        if key.startswith("Numpad "):
+            key = key.replace("Numpad ", "")
+            if key == "Divide": key = "/"
+            elif key == "Multiply": key = "*"
+            elif key == "Subtract": key = "-"
+            elif key == "Add": key = "+"
+        
         calc_state["key_buffer"] += key.lower()
         calc_state["key_buffer"] = calc_state["key_buffer"][-10:]
         if any(kw in calc_state["key_buffer"] for kw in ["admin", "фвьшт", "секрет", "ctrhtn"]):
@@ -757,16 +794,37 @@ def main(page: ft.Page):
             process_input("LETTER_" + key)
             return
             
-        if key in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "+", "-", "*", "/", "%"]:
+        if key in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "+", "-", "*", "/", "%", "(", ")"]:
             process_input(key)
         elif key in ["Enter", "Numpad Enter", "="]:
-            process_input("=")
+            if e.shift and key == "=":
+                 process_input("+")
+            else:
+                 process_input("=")
+        elif key == "+": # Для некоторых раскладок
+             process_input("+")
         elif key == "Escape":
             process_input("AC")
         elif key in ["Backspace", "Delete"]:
-            process_input("C")
+            # В v3.0.0 Backspace стирает одну цифру
+            process_input("BACKSPACE")
 
-    page.on_keyboard_event = on_keyboard
+    # --- Фоновые процессы ---
+    async def monitor_flicker():
+        """Имитация мерцания старого CRT монитора"""
+        while True:
+            if calc_state["is_engineering"] and not calc_state["is_animating"]:
+                engineering_monitor.opacity = 0.8 + (math.sin(time.time() * 10) * 0.1)
+                try: 
+                    engineering_monitor.update()
+                except: pass
+            await asyncio.sleep(0.05)
+
+    def on_load():
+        page.run_task(monitor_flicker)
+    
+    # Регистрация инициализации
+    threading.Timer(0.1, on_load).start()
 
     def create_btn(text, data=None, color=COLORS["text_white"], is_neon=False, width=75, bgcolor=None, font_size=28):
         """Создает стилизованную кнопку калькулятора"""
@@ -820,23 +878,41 @@ def main(page: ft.Page):
     science_btn = None
 
     def toggle_zen(e):
-        """Переключает режим 'Дзен' (скрывает лишние элементы)"""
+        """Переключает режим 'Дзен' для v3.0.0"""
         nonlocal zen_active
         zen_active = not zen_active
+        
+        # Сбрасываем визуальные эффекты при переключении
+        clear_active_effects()
+
+        if history_container: 
+            history_container.opacity = 0 if zen_active else 1
+            history_container.visible = not zen_active
+        
+        zen_btn.icon = ft.Icons.SELF_IMPROVEMENT if zen_active else ft.Icons.SELF_IMPROVEMENT_OUTLINED
+        zen_btn.icon_color = COLORS["accent_purple"] if zen_active else ft.Colors.WHITE54
+        
+        # Обновляем монитор
+        update_monitor()
+        page.update()
+
+    def update_monitor():
+        """Обновляет содержимое 'экранчика' инженерного режима (v3.0.0 CRT)"""
+        if not calc_state["is_engineering"]: return
+        
         if zen_active:
-             if history_container: history_container.opacity = 0
-             if drawer_btn: 
-                 drawer_btn.opacity = 0
-                 drawer_btn.disabled = True
-             zen_btn.icon = ft.Icons.SELF_IMPROVEMENT
-             zen_btn.icon_color = COLORS["accent_purple"]
+            # В Дзене монитор показывает минималистичную 'волну' или выключен
+            monitor_content.value = "ZEN_MODE: ACTIVE\n[PURE_MATHEMATICS]"
+            monitor_content.color = ft.Colors.WHITE24
         else:
-             if history_container: history_container.opacity = 1
-             if drawer_btn:
-                 drawer_btn.opacity = 1
-                 drawer_btn.disabled = False
-             zen_btn.icon = ft.Icons.SELF_IMPROVEMENT_OUTLINED
-             zen_btn.icon_color = ft.Colors.WHITE54
+            # Многофункциональный дисплей (RPG Stats + Progress Bar)
+            monitor_content.color = "#00FF41"
+            xp_needed = 10
+            xp_current = calc_state["ops_count"] % xp_needed
+            progress = "■" * xp_current + "□" * (xp_needed - xp_current)
+            
+            stats = f"LVL: {calc_state['user_level']} [{progress}]"
+            monitor_content.value = f"SYSTEM_STATUS: {calc_state['display_text']}\n{stats}\nEXPR_BUFFER: {calc_state['operator'] or 'IDLE'}"
         page.update()
 
 
@@ -846,25 +922,26 @@ def main(page: ft.Page):
         else:
             calc_state["is_engineering"] = not calc_state["is_engineering"]
         
+        # Отключаем авто-ресайз если окно было изменено пользователем
+        # Flet ловит resize, но мы упростим: если текущая ширина сильно отличается от целевой, не трогаем
+        current_w = page.window.width
+        is_std = abs(current_w - 420) < 10
+        is_eng = abs(current_w - 800) < 10
+        should_resize = is_std or is_eng
+        
         if calc_state["is_engineering"]:
             engineering_buttons_area.visible = True
             centered_content.width = 750
-            page.window.width = 800
-            # eng_btn_drawer.text = "Выключить Инженерный режим" # Drawer button removed
+            if should_resize: page.window.width = 800
             science_btn.icon = ft.Icons.SCIENCE
             science_btn.icon_color = "#F59E0B"
+            update_monitor()
         else:
             engineering_buttons_area.visible = False
             centered_content.width = 420
-            page.window.width = 420
-            # eng_btn_drawer.text = "Включить Инженерный режим" # Drawer button removed
+            if should_resize: page.window.width = 420
             science_btn.icon = ft.Icons.SCIENCE_OUTLINED
             science_btn.icon_color = ft.Colors.WHITE54
-        
-        # Обновляем фон черной дыры, если он активен
-        if black_hole_bg.visible:
-            page.update()
-            
         page.update()
 
     zen_btn = ft.IconButton(
@@ -892,11 +969,38 @@ def main(page: ft.Page):
         tooltip="Умный конвертер"
     )
 
+    def toggle_converter(e):
+        """Переключает режим Конвертера (полноэкранный режим v3.2.0)"""
+        is_visible = not converter_panel.visible
+        converter_panel.visible = is_visible
+        
+        # Полностью скрываем элементы калькулятора
+        buttons_area.visible = not is_visible
+        display_area.visible = not is_visible # Теперь скрываем и экран
+        
+        if is_visible:
+             update_rates_and_convert()
+             if zen_active:
+                 engineering_buttons_area.visible = False
+                 science_btn.icon = ft.Icons.SCIENCE_OUTLINED
+                 science_btn.icon_color = ft.Colors.WHITE54
+        
+        conv_btn.icon = ft.Icons.CURRENCY_EXCHANGE if not is_visible else ft.Icons.CALCULATE
+        conv_btn.icon_color = COLORS["accent_green"] if is_visible else ft.Colors.WHITE54
+        page.update()
+
+    conv_btn = ft.IconButton(
+        icon=ft.Icons.CURRENCY_EXCHANGE_OUTLINED,
+        icon_color=ft.Colors.WHITE54,
+        on_click=toggle_converter,
+        tooltip="Конвертер"
+    )
+
     top_bar = ft.Container(
         content=ft.Row(
             controls=[
                 drawer_btn,
-                ft.Row([science_btn, zen_btn], spacing=0)
+                ft.Row([conv_btn, science_btn, zen_btn], spacing=0)
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         ),
@@ -935,74 +1039,154 @@ def main(page: ft.Page):
                 spacing=0
             ),
             padding=ft.Padding(25, 0, 25, 20),
-            height=245,
+            height=300, # Увеличено с 245
             alignment=ft.Alignment.BOTTOM_RIGHT
         )
 
 
-    def create_converter_drawer():
-        """Создает боковую панель с конвертером"""
-        exchange_rates = {"USD": 95.0, "EUR": 105.0, "GEL": 35.0}
+    # --- Режим Конвертера (v3.2.0) ---
+    conv_mode = "currency"
+
+    def update_rates_and_convert(e=None):
+        """Продвинутая логика конвертации (v3.2.1)"""
+        val_str = conv_input.value.replace(",", ".") if conv_input.value else "0"
         try:
-            req = urllib.request.urlopen("https://api.exchangerate-api.com/v4/latest/RUB", timeout=2)
-            data = json.loads(req.read())
-            rates = data.get("rates", {})
-            if "USD" in rates:
-                exchange_rates["USD"] = 1 / rates["USD"]
-                exchange_rates["EUR"] = 1 / rates["EUR"]
-                exchange_rates["GEL"] = 1 / rates["GEL"]
-        except: pass
+            val = Decimal(val_str)
+        except: return
 
-        def convert_values(e):
-            try:
-                val = Decimal(conv_input.value.replace(",", "."))
-                usd = val / Decimal(str(round(exchange_rates["USD"], 4)))
-                gel = val / Decimal(str(round(exchange_rates["GEL"], 4)))
-                eur = val / Decimal(str(round(exchange_rates["EUR"], 4)))
-                conv_curr.value = f"＄ {usd:.2f} USD\n€ {eur:.2f} EUR\n₾ {gel:.2f} GEL"
-                
-                lbs = val * Decimal("2.20462")
-                oz = val * Decimal("35.274")
-                conv_weight.value = f"⚖️  {lbs:.2f} фунтов\n⚖️  {oz:.2f} унций"
-                
-                feet = val * Decimal("3.28084")
-                cm = val * Decimal("100")
-                conv_length.value = f"📏  {feet:.2f} футов\n📏  {cm:.2f} см"
-            except:
-                conv_curr.value = "..."; conv_weight.value = "..."; conv_length.value = "..."
-            page.update()
+        res = Decimal(0)
+        f, t = conv_from_dd.value, conv_to_dd.value
+        
+        if conv_mode == "currency":
+            rates = {"USD": 95.0, "EUR": 105.0, "GEL": 35.0, "RUB": 1.0, "KZT": 0.2}
+            res = val * Decimal(str(rates.get(f, 1.0))) / Decimal(str(rates.get(t, 1.0)))
+        
+        elif conv_mode == "weight":
+            w_rates = {"KG": 1.0, "LB": 0.4536, "OZ": 0.02835, "G": 0.001}
+            res = val * Decimal(str(w_rates.get(f, 1.0))) / Decimal(str(w_rates.get(t, 1.0)))
 
-        conv_input = ft.TextField(
-            label="Сумма / Вес / Длина (RUB/KG/M)", 
-            on_change=convert_values, color=COLORS["text_white"], 
-            border_color=COLORS["accent_purple"], cursor_color=COLORS["accent_purple"]
-        )
-        conv_curr = ft.Text("...", size=16, color=COLORS["text_white"], weight=ft.FontWeight.W_500)
-        conv_weight = ft.Text("...", size=16, color=COLORS["text_white"], weight=ft.FontWeight.W_500)
-        conv_length = ft.Text("...", size=16, color=COLORS["text_white"], weight=ft.FontWeight.W_500)
+        elif conv_mode == "length":
+            l_rates = {"M": 1.0, "FT": 0.3048, "IN": 0.0254, "CM": 0.01}
+            res = val * Decimal(str(l_rates.get(f, 1.0))) / Decimal(str(l_rates.get(t, 1.0)))
+        
+        elif conv_mode == "temp":
+            if f == t: res = val
+            elif f == "C": res = val * 9/5 + 32 if t == "F" else val + Decimal("273.15")
+            elif f == "F": res = (val - 32) * 5/9 if t == "C" else (val - 32) * 5/9 + Decimal("273.15")
+            elif f == "K": res = val - Decimal("273.15") if t == "C" else (val - Decimal("273.15")) * 9/5 + 32
 
+        elif conv_mode == "speed":
+            s_rates = {"KM/H": 1.0, "M/S": 3.6, "MPH": 1.60934}
+            res = val * Decimal(str(s_rates.get(f, 1.0))) / Decimal(str(s_rates.get(t, 1.0)))
+            
+        conv_res_text.value = f"{res:.4f}".rstrip('0').rstrip('.')
+        page.update()
+
+    def change_conv_mode(e):
+        nonlocal conv_mode
+        conv_mode = e.control.data
+        
+        # Обновляем опции выпадающих списков
+        options_map = {
+            "currency": ["RUB", "USD", "EUR", "GEL", "KZT"],
+            "weight": ["KG", "LB", "OZ", "G"],
+            "length": ["M", "FT", "IN", "CM"],
+            "temp": ["C", "F", "K"],
+            "speed": ["KM/H", "M/S", "MPH"]
+        }
+        new_opts = [ft.dropdown.Option(x) for x in options_map[conv_mode]]
+        conv_from_dd.options = new_opts
+        conv_to_dd.options = new_opts
+        conv_from_dd.value = options_map[conv_mode][0]
+        conv_to_dd.value = options_map[conv_mode][1] if len(options_map[conv_mode]) > 1 else options_map[conv_mode][0]
+        
+        for btn in [m_curr_btn, m_weight_btn, m_length_btn, m_temp_btn, m_speed_btn]:
+            btn.style = ft.ButtonStyle(bgcolor=ft.Colors.TRANSPARENT, color=ft.Colors.WHITE30)
+        e.control.style = ft.ButtonStyle(bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE), color=COLORS["accent_purple"])
+        
+        update_rates_and_convert()
+        page.update()
+
+    def swap_units(e):
+        conv_from_dd.value, conv_to_dd.value = conv_to_dd.value, conv_from_dd.value
+        update_rates_and_convert()
+        page.update()
+
+    # Кнопки режимов
+    mode_btn_style = lambda active: ft.ButtonStyle(
+        bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE) if active else ft.Colors.TRANSPARENT,
+        color=COLORS["accent_purple"] if active else ft.Colors.WHITE30,
+        shape=ft.CircleBorder(),
+        padding=10
+    )
+    
+    m_curr_btn = ft.IconButton(icon=ft.Icons.MONETIZATION_ON, data="currency", on_click=change_conv_mode, style=mode_btn_style(True))
+    m_weight_btn = ft.IconButton(icon=ft.Icons.SCALE, data="weight", on_click=change_conv_mode, style=mode_btn_style(False))
+    m_length_btn = ft.IconButton(icon=ft.Icons.STRAIGHTEN, data="length", on_click=change_conv_mode, style=mode_btn_style(False))
+    m_temp_btn = ft.IconButton(icon=ft.Icons.THERMOSTAT, data="temp", on_click=change_conv_mode, style=mode_btn_style(False))
+    m_speed_btn = ft.IconButton(icon=ft.Icons.SPEED, data="speed", on_click=change_conv_mode, style=mode_btn_style(False))
+
+    # Универсальные селекторы
+    conv_from_dd = ft.Dropdown(options=[ft.dropdown.Option(x) for x in ["RUB", "USD", "EUR", "GEL", "KZT"]], value="RUB", width=120, on_select=update_rates_and_convert)
+    conv_to_dd = ft.Dropdown(options=[ft.dropdown.Option(x) for x in ["USD", "EUR", "GEL", "RUB", "KZT"]], value="USD", width=120, on_select=update_rates_and_convert)
+    
+    universal_row = ft.Row([conv_from_dd, ft.Icon(ft.Icons.ARROW_FORWARD_IOS, size=12, color=ft.Colors.WHITE10), conv_to_dd], alignment=ft.MainAxisAlignment.CENTER)
+    
+    conv_res_text = ft.Text("0.00", size=32, weight=ft.FontWeight.W_300, color=ft.Colors.WHITE)
+
+    conv_input = ft.TextField(
+        label="Значение", 
+        dense=True,
+        color=ft.Colors.WHITE, 
+        border_color=COLORS["accent_purple"],
+        focused_border_color=COLORS["accent_purple"],
+        width=200,
+        text_align=ft.TextAlign.CENTER,
+        text_size=18,
+        on_change=update_rates_and_convert
+    )
+
+    converter_panel = ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Text("ADVANCED CONVERTER", size=12, color=COLORS["accent_purple"], weight=ft.FontWeight.BOLD),
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_color=ft.Colors.WHITE24, on_click=toggle_converter)
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Container(height=10),
+            ft.Row([m_curr_btn, m_weight_btn, m_length_btn, m_temp_btn, m_speed_btn], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Divider(height=40, color=ft.Colors.WHITE10),
+            ft.Column([
+                ft.Row([conv_input], alignment=ft.MainAxisAlignment.CENTER),
+                ft.Row([ft.IconButton(icon=ft.Icons.SWAP_VERT, on_click=swap_units, icon_color=COLORS["accent_purple"])], alignment=ft.MainAxisAlignment.CENTER),
+                universal_row,
+                ft.Container(height=20),
+                ft.Row([conv_res_text], alignment=ft.MainAxisAlignment.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        padding=ft.Padding(25, 10, 25, 20),
+        visible=False,
+        animate_opacity=300,
+        bgcolor=ft.Colors.BLACK,
+        expand=True,
+        height=600
+    )
+
+
+    def create_converter_drawer():
+        """Создает боковую панель (только ссылки в v3.0.0)"""
         return ft.Container(
             content=ft.Column(
                 controls=[
                     ft.Row([
-                        ft.Text("Меню / Конвертер", size=20, weight=ft.FontWeight.W_600, color=COLORS["accent_purple"]),
+                        ft.Text("Меню", size=20, weight=ft.FontWeight.W_600, color=COLORS["accent_purple"]),
                         ft.IconButton(icon=ft.Icons.CLOSE, on_click=lambda _: close_drawer(), icon_color=COLORS["text_dim"])
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     ft.Divider(color=ft.Colors.WHITE24),
-                    conv_input,
-                    ft.Container(height=10),
-                    ft.Text("Валюты (USD/EUR/GEL):", color=COLORS["text_dim"], size=13),
-                    conv_curr,
-                    ft.Text("Вес (Фунт/Унция):", color=COLORS["text_dim"], size=13),
-                    conv_weight,
-                    ft.Text("Длина (Фут/СМ):", color=COLORS["text_dim"], size=13),
-                    conv_length,
-                    ft.Divider(color=ft.Colors.WHITE24),
-                    ft.TextButton("Наш Telegram", icon=ft.Icons.SEND, url="https://t.me/JoeMoeCode", icon_color=COLORS["accent_purple"]),
+                    ft.TextButton("Telegram Канал", icon=ft.Icons.SEND, url="https://t.me/JoeMoeCode", icon_color=COLORS["accent_purple"]),
                     ft.TextButton("Сообщить о баге", icon=ft.Icons.BUG_REPORT, url=f"https://github.com/{GITHUB_REPO}/issues", icon_color=COLORS["accent_red"]),
                     ft.TextButton("Проверить обновления", icon=ft.Icons.REFRESH, on_click=check_for_updates, icon_color=COLORS["accent_blue"]),
-                    ft.Container(height=10),
-                    ft.Text("Версия: " + CURRENT_VERSION, color=COLORS["text_dim"], size=12)
+                    ft.Divider(color=ft.Colors.WHITE24),
+                    ft.Text("Калькулятор v3.0.0", color=COLORS["text_dim"], size=12)
                 ]
             ),
             left=-400, top=0, bottom=0, width=320, bgcolor="#121620", padding=20,
@@ -1017,36 +1201,60 @@ def main(page: ft.Page):
     custom_drawer = create_converter_drawer()
 
 
-    # --- Инженерные кнопки ---
+    # --- Инженерные кнопки и 'экранчик' ---
+    monitor_content = ft.Text(
+        "BOOTING_SYSTEM...", 
+        size=13, 
+        color="#00FF41", # Classic Matrix Green
+        font_family="monospace",
+    )
+    
+    engineering_monitor = ft.Container(
+        content=monitor_content,
+        bgcolor="#001100", # Darker green background
+        padding=12,
+        border_radius=5,
+        border=ft.Border.all(2, "#00FF41"),
+        height=90,
+        margin=ft.Margin(0, 0, 0, 15),
+        shadow=ft.BoxShadow(
+            spread_radius=1,
+            blur_radius=15,
+            color=ft.Colors.with_opacity(0.3, "#00FF41")
+        ),
+        animate=ft.Animation(300, "easeIn")
+    )
+
     engineering_buttons_area = ft.Container(
         content=ft.Column(
             controls=[
+                engineering_monitor,
                 ft.Row([
-                    create_btn("sin", font_size=18), 
-                    create_btn("cos", font_size=18), 
-                    create_btn("tan", font_size=18),
-                    create_btn("xʸ", "^", font_size=18)
+                    create_btn("sin", font_size=16), 
+                    create_btn("cos", font_size=16), 
+                    create_btn("tan", font_size=16),
+                    create_btn("xʸ", "^", font_size=16)
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Row([
                     create_btn("√", "sqrt", font_size=18), 
-                    create_btn("log", font_size=18), 
-                    create_btn("ln", font_size=18),
+                    create_btn("log", font_size=16), 
+                    create_btn("ln", font_size=16),
                     create_btn("x²", "sq2", font_size=18)
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Row([
-                    create_btn("abs", font_size=18), 
-                    create_btn("n!", "fact", font_size=18), 
-                    create_btn("(", "(", color="#10B981", font_size=20),
-                    create_btn(")", ")", color="#10B981", font_size=20)
+                    create_btn("x³", "sq3", font_size=18), 
+                    create_btn("abs", font_size=16), 
+                    create_btn("n!", "fact", font_size=18),
+                    create_btn("π", "pi", font_size=24) # Перемещено
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Row([
-                    create_btn("π", "pi", font_size=24),
-                    create_btn("e", font_size=24),
-                    create_btn("Ans", "Ans", color="#3B82F6", font_size=16),
+                    create_btn("e", font_size=24), # Перемещено
+                    create_btn("(", "(", color="#10B981", font_size=20), # Перемещено
+                    create_btn(")", ")", color="#10B981", font_size=20), # Перемещено
                     create_btn("mod", "%", font_size=16)
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ],
-            spacing=15
+            spacing=10
         ),
         padding=ft.Padding(25, 25, 0, 25),
         visible=False,
@@ -1102,6 +1310,7 @@ def main(page: ft.Page):
             controls=[
                 top_bar,
                 display_area,
+                converter_panel,
                 all_buttons
             ],
             spacing=0,
@@ -1122,6 +1331,7 @@ def main(page: ft.Page):
         alignment=ft.Alignment(0, 0)
     )
 
+    page.on_keyboard_event = on_keyboard
     page.add(ft.Stack(controls=[black_hole_bg, main_layout, custom_drawer], expand=True))
     page.update()
 
