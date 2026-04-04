@@ -1,14 +1,14 @@
 @echo off
 setlocal
 chcp 65001 >nul
-title Super Calculator v3.0.0 Install
+title Calculator v3.0.0 Install
 
-set "APP_NAME=PurpurikiCalculator"
+set "APP_NAME=Calculator"
 set "INSTALL_DIR=%LocalAppData%\%APP_NAME%"
 set "EXE_NAME=Calculator_v3.0.0.exe"
 
 echo ===================================================
-echo           SUPER CALCULATOR INSTALL v3.0.0
+echo           CALCULATOR INSTALL v3.0.0
 echo ===================================================
 echo.
 
