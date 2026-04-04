@@ -1,6 +1,11 @@
+.venv/
 venv/
 __pycache__/
 build/
+.vscode/
 *.spec
 *.pyc
 *.lnk
+.pytest_cache/
+*.exe.zip
+*.zip.dir/
