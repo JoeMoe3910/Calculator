@@ -1,46 +1,41 @@
 @echo off
+setlocal
 chcp 65001 >nul
-title Деинсталлятор Калькулятора
+title Деинсталляция Super Calculator v3.0.0
+
+set "APP_NAME=PurpurikiCalculator"
+set "INSTALL_DIR=%LocalAppData%\%APP_NAME%"
+set "REG_PATH=HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\%APP_NAME%"
 
 echo ===================================================
-echo             УДАЛЕНИЕ КАЛЬКУЛЯТОРА
+echo           УДАЛЕНИЕ КАЛЬКУЛЯТОРА v3.0.0
 echo ===================================================
 echo.
-echo Внимание! Вы собираетесь ПОЛНОСТЬЮ удалить Калькулятор.
-echo Эта операция безвозвратно удалит:
-echo   - Ярлык с Рабочего стола
-echo   - ВСЕ файлы в папке: "%~dp0"
-echo.
 
-set /p confirm="Вы уверены, что хотите удалить всё? (Y/N): "
+set /p confirm="Вы уверены, что хотите полностью удалить программу? (Y/N): "
 if /I "%confirm%" NEQ "Y" (
-    echo.
     echo Удаление отменено.
     pause
-    exit
+    exit /b
 )
 
 echo.
-echo [1/2] Удаление ярлыка с Рабочего стола...
+echo [1/3] Удаление ярлыка...
 if exist "%USERPROFILE%\Desktop\Калькулятор.lnk" (
     del "%USERPROFILE%\Desktop\Калькулятор.lnk"
-    echo     Ярлык успешно удален.
-) else (
-    echo     Ярлык на Рабочем столе не найден.
+    echo     Ярлык удален.
 )
 
-echo.
-echo [2/2] Подготовка к удалению файлов проекта...
-echo Программа закроется, и через 2 секунды папка будет удалена.
-echo.
+echo [2/3] Удаление данных из реестра...
+reg delete "%REG_PATH%" /f >nul 2>&1
+echo     Реестр очищен.
 
-set "targetDir=%~dp0"
-:: Убираем последний слэш для корректной работы rd
-if "%targetDir:~-1%"=="\" set "targetDir=%targetDir:~0,-1%"
-
-:: Запускаем отдельный процесс для удаления папки после выхода из этого скрипта
-start /b "" cmd /c "timeout /t 2 /nobreak >nul & rd /s /q \"%targetDir%\""
+echo [3/3] Очистка файлов...
+echo Программа будет полностью удалена через 2 секунды. Папка %INSTALL_DIR% будет стерта.
+echo.
+timeout /t 2 /nobreak >nul
+start /b "" cmd /c "timeout /t 1 /nobreak >nul & if exist \"%INSTALL_DIR%\" rd /s /q \"%INSTALL_DIR%\""
 
 echo Прощайте!
-timeout /t 1 >nul
+timeout /t 2 >nul
 exit
