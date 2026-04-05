@@ -1,4 +1,4 @@
-# 🧮 Super Calculator v3.0.0 ✨
+# 🧮 Calculator v3.0.0 ✨
 
 [![Telegram](https://img.shields.io/badge/Telegram-Channel-blue?style=for-the-badge&logo=telegram)](https://t.me/JoeMoeCode)
 
